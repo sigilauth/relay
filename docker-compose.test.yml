@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: relay
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay-test-password
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U relay"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  relay:
+    build: .
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgresql://relay:relay-test-password@postgres:5432/relay?sslmode=disable"
+      # Test server public key (P-256) - DO NOT USE IN PRODUCTION
+      # For production, set SERVER_PUBLIC_KEY to your actual Sigil server's public key
+      SERVER_PUBLIC_KEY: "A76yj+ZMatXkyyUv3PGYYFUjcSNMoZ8Hgqz+vOISrkN5"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

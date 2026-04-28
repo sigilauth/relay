@@ -1,0 +1,174 @@
+# Security Scanning Workflow
+# Copy to: .github/workflows/security.yml in each repo
+
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 7 * * *' # Daily 7am UTC
+
+permissions:
+  security-events: write
+  contents: read
+
+jobs:
+  # Secret scanning with gitleaks
+  gitleaks:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Go vulnerability check
+  govulncheck:
+    name: Go Vulnerability Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.2'
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        run: govulncheck ./...
+
+  # npm audit
+  npm-audit:
+    name: npm Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for package-lock.json
+        id: check_npm
+        run: |
+          if [ -f "package-lock.json" ]; then
+            echo "has_npm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_npm=false" >> "$GITHUB_OUTPUT"
+            echo "No package-lock.json found, skipping npm audit"
+          fi
+
+      - name: Setup Node
+        if: steps.check_npm.outputs.has_npm == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        if: steps.check_npm.outputs.has_npm == 'true'
+        run: npm ci
+
+      - name: Run audit
+        if: steps.check_npm.outputs.has_npm == 'true'
+        run: npm audit --audit-level=high
+
+  # OWASP Dependency Check (multi-language)
+  dependency-check:
+    name: OWASP Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'sigil-auth'
+          path: '.'
+          format: 'SARIF'
+          out: 'reports'
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: reports/dependency-check-report.sarif
+        if: always()
+
+  # OpenAPI security lint (for server/relay)
+  openapi-lint:
+    name: OpenAPI Security Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for OpenAPI spec
+        id: check_openapi
+        run: |
+          if [ -f "api/openapi.yaml" ]; then
+            echo "has_openapi=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_openapi=false" >> "$GITHUB_OUTPUT"
+            echo "No api/openapi.yaml found, skipping OpenAPI lint"
+          fi
+
+      - name: Setup Node
+        if: steps.check_openapi.outputs.has_openapi == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Spectral
+        if: steps.check_openapi.outputs.has_openapi == 'true'
+        run: npm install -g @stoplight/spectral-cli
+
+      - name: Run Spectral security rules
+        if: steps.check_openapi.outputs.has_openapi == 'true'
+        run: |
+          spectral lint api/openapi.yaml --ruleset api/.spectral-security.yaml --fail-severity warn
+
+  # TLS configuration audit (for deployed staging)
+  tls-audit:
+    name: TLS Configuration Audit
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - name: Install testssl.sh
+        run: |
+          git clone --depth 1 https://github.com/drwetter/testssl.sh.git
+          chmod +x testssl.sh/testssl.sh
+
+      - name: Run TLS audit on staging
+        run: |
+          ./testssl.sh/testssl.sh --quiet --severity HIGH \
+            --jsonfile tls-report.json \
+            staging.sigilauth.com:443 || true
+
+      - name: Check for critical issues
+        run: |
+          if grep -q '"severity" *: *"CRITICAL"' tls-report.json 2>/dev/null; then
+            echo "::error::Critical TLS issue found"
+            exit 1
+          fi
+          if grep -q '"severity" *: *"HIGH"' tls-report.json 2>/dev/null; then
+            echo "::warning::High severity TLS issue found"
+          fi
+        continue-on-error: true
+
+      - name: Upload TLS report
+        uses: actions/upload-artifact@v4
+        with:
+          name: tls-audit-report
+          path: tls-report.json
+        if: always()

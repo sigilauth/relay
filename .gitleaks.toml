@@ -1,0 +1,67 @@
+# Gitleaks configuration for Sigil Auth
+# https://github.com/gitleaks/gitleaks
+
+title = "Sigil Auth Secret Scanning"
+
+[extend]
+useDefault = true
+
+# Sigil-specific patterns
+[[rules]]
+id = "sigil-api-key-live"
+description = "Sigil Auth Live API Key"
+regex = '''sgk_live_[a-f0-9]{64}'''
+entropy = 3.5
+keywords = ["sgk_live"]
+
+[[rules]]
+id = "sigil-api-key-test"
+description = "Sigil Auth Test API Key"
+regex = '''sgk_test_[a-f0-9]{64}'''
+entropy = 3.5
+keywords = ["sgk_test"]
+
+[[rules]]
+id = "sigil-webhook-secret"
+description = "Sigil Webhook Secret"
+regex = '''whsec_[a-zA-Z0-9]{32,}'''
+entropy = 3.5
+keywords = ["whsec_"]
+
+[[rules]]
+id = "bip39-mnemonic"
+description = "Potential BIP39 Mnemonic (24 words)"
+regex = '''(?i)(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|actor|actress|actual|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|alter|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual|another|answer|antenna|antique|anxiety|any|apart|apology|appear|apple|approve|april|arch|arctic|area|arena|argue|arm|armed|armor|army|around|arrange|arrest|arrive|arrow|art|artefact|artist|artwork|ask|aspect|assault|asset|assist|assume|asthma|athlete|atom|attack|attend|attitude|attract|auction|audit|august|aunt|author|auto|autumn|average|avocado|avoid|awake|aware|away|awesome|awful|awkward|axis)[[:space:]]+(abandon|ability|able|about|above|absent|absorb|abstract|absurd|abuse|access|accident|account|accuse|achieve|acid|acoustic|acquire|across|act|action|actor|actress|actual|adapt|add|addict|address|adjust|admit|adult|advance|advice|aerobic|affair|afford|afraid|again|age|agent|agree|ahead|aim|air|airport|aisle|alarm|album|alcohol|alert|alien|all|alley|allow|almost|alone|alpha|already|also|alter|always|amateur|amazing|among|amount|amused|analyst|anchor|ancient|anger|angle|angry|animal|ankle|announce|annual|another|answer|antenna|antique|anxiety|any|apart|apology|appear|apple|approve|april|arch|arctic|area|arena|argue|arm|armed|armor|army|around|arrange|arrest|arrive|arrow|art|artefact|artist|artwork|ask|aspect|assault|asset|assist|assume|asthma|athlete|atom|attack|attend|attitude|attract|auction|audit|august|aunt|author|auto|autumn|average|avocado|avoid|awake|aware|away|awesome|awful|awkward|axis)[[:space:]]+'''
+keywords = ["mnemonic", "seed", "recovery"]
+
+# APNs/FCM credentials
+[[rules]]
+id = "apns-key"
+description = "Apple APNs Private Key"
+regex = '''-----BEGIN PRIVATE KEY-----[\s\S]*?-----END PRIVATE KEY-----'''
+path = '''(?i)apns.*\.p8'''
+
+[[rules]]
+id = "fcm-service-account"
+description = "Firebase Service Account Key"
+regex = '''"type":\s*"service_account"'''
+path = '''(?i)(fcm|firebase|service.?account).*\.json'''
+
+# Allowlist - paths that may legitimately contain test data
+[allowlist]
+paths = [
+  '''test[-_]?vectors''',
+  '''fixtures''',
+  '''mock''',
+  '''_test\.go$''',
+  '''\.test\.(ts|js)$''',
+  '''spec\.(ts|js)$''',
+]
+
+# Files to ignore
+[[rules.allowlist]]
+paths = [
+  '''go\.sum''',
+  '''package-lock\.json''',
+  '''yarn\.lock''',
+]
